@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Controle EB - Alto Escalão</title>
+    
+    <script>
+        // ================= CONFIGURAÇÃO DO WEBHOOK =================
+        const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1523135450632556768/0iR1MK8pg5GciSdmZmRToXlItDHkD9cY8Jua4J1OT7Sp1J0bCZ46ZUPXoXcCLrDd2ZVr";
+
+        // ================= LISTA DE IDS AUTO-APROVADOS =================
+        const ADMINS_PERMITIDOS = [
+            "617468134621708288", 
+            "1263086691174842429"
+        ];
+
+        // Crie uma senha mestre que só você sabe. Ela vai nos links de aprovação do Discord.
+        const CHAVE_MESTRE_DONO = "EB_ALTO_ESCALAO_2026"; 
+
+        // Verificações de URL e Sessão
+        const urlParams = new URLSearchParams(window.location.search);
+        const fragmentParams = new URLSearchParams(window.location.hash.substring(1));
+        const accessToken = fragmentParams.get('access_token') || localStorage.getItem('eb_session_token');
+        const tokenUrl = urlParams.get('token');
+
+        // Se o dono clicou no link de aprovação do Discord, ele entra com o tokenUrl
+        if (tokenUrl === CHAVE_MESTRE_DONO) {
+            localStorage.setItem('eb_acesso_temporario', 'true');
+            // Limpa a URL para ficar bonita
+            window.history.replaceState({}, document.title, window.location.pathname);
+            removerTelaBloqueio();
+        } 
+        // Se o usuário já foi aprovado antes pelo dono e guardou o cookie/localStorage
+        else if (localStorage.getItem('eb_acesso_temporario') === 'true') {
+            removerTelaBloqueio();
+        }
+        // Se veio pelo fluxo normal do Discord OAuth2
+        else if (accessToken) {
+            validarUsuarioDiscord(accessToken);
+        } 
+        // Se não tem nada, mostra a tela para pedir autorização
+        else {
+            document.addEventListener('DOMContentLoaded', mostrarTelaPedirAutorizacao);
+        }
+
+        function validarUsuarioDiscord(token) {
+            fetch('https://discord.com/api/users/@me', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+            .then(response => {
+                if (!response.ok) throw new Error("Token expirado");
+                return response.json();
+            })
+            .then(usuarioDiscord => {
+                if (!ADMINS_PERMITIDOS.includes(usuarioDiscord.id)) {
+                    // Não está na lista? Mostra a tela estilizada para ele pedir ao dono
+                    mostrarTelaPedirAutorizacao(usuarioDiscord);
+                } else {
+                    localStorage.setItem('eb_session_token', token);
+                    removerTelaBloqueio();
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                mostrarTelaPedirAutorizacao();
+            });
+        }
+
+        function removerTelaBloqueio() {
+            document.addEventListener('DOMContentLoaded', () => {
+                const painelBloqueio = document.getElementById('bloqueio-seguranca');
+                if (painelBloqueio) painelBloqueio.remove();
+            });
+        }
+
+        // Gerador de interface HTML/CSS para usuários bloqueados solicitarem acesso
+        function mostrarTelaPedirAutorizacao(usuario = null) {
+            const nomePreenchido = usuario ? `@${usuario.username}` : "";
+            const idPreenchido = usuario ? usuario.id : "";
+
+            document.body.innerHTML = `
+                <div style="background-color: #0f172a; color: #f8fafc; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; height: 100vh; display: flex; justify-content: center; align-items: center; margin: 0;">
+                    <div style="background: #1e293b; padding: 40px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); text-align: center; max-width: 450px; width: 100%; border-top: 4px solid #ef4444;">
+                        <h2 style="color: #ef4444; margin-bottom: 10px;"><i class="fa-solid fa-lock"></i> Acesso Restrito Militar</h2>
+                        <p style="color: #94a3b8; font-size: 0.95rem; margin-bottom: 25px;">Seu ID do Discord não consta na lista oficial. Preencha abaixo para solicitar liberação ao Dono.</p>
+                        
+                        <div style="text-align: left; margin-bottom: 15px;">
+                            <label style="display: block; font-weight: bold; margin-bottom: 5px; font-size: 0.85rem; color: #cbd5e1;">Seu Usuário/Tag do Discord:</label>
+                            <input type="text" id="solicitanteNome" value="${nomePreenchido}" placeholder="Ex: @Recruta" style="width: 100%; padding: 10px; border: 1px solid #475569; background: #0f172a; color: white; border-radius: 4px; box-sizing: border-box;">
+                        </div>
+
+                        <div style="text-align: left; margin-bottom: 25px;">
+                            <label style="display: block; font-weight: bold; margin-bottom: 5px; font-size: 0.85rem; color: #cbd5e1;">Seu ID de Usuário:</label>
+                            <input type="text" id="solicitanteID" value="${idPreenchido}" placeholder="Ex: 617468134621708288" style="width: 100%; padding: 10px; border: 1px solid #475569; background: #0f172a; color: white; border-radius: 4px; box-sizing: border-box;">
+                        </div>
+
+                        <button id="btnEnviarPedido" onclick="enviarPedidoAoDono()" style="width: 100%; padding: 12px; background-color: #2e7d32; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; transition: background 0.2s;">
+                            <i class="fa-solid fa-paper-plane"></i> Enviar Solicitação ao Dono
+                        </button>
+                        
+                        <div style="margin-top: 20px;">
+                            <a href="index.html" style="color: #64748b; text-decoration: none; font-size: 0.85rem;"><i class="fa-solid fa-arrow-left"></i> Voltar para o Mural</a>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function enviarPedidoAoDono() {
+            const nome = document.getElementById('solicitanteNome').value.trim();
+            const id = document.getElementById('solicitanteID').value.trim();
+            const btn = document.getElementById('btnEnviarPedido');
+
+            if(!nome || !id) {
+                alert("Por favor, preencha todos os campos para envio.");
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerText = "Enviando pedido...";
+            btn.style.backgroundColor = "#475569";
+
+            // Cria as URLs que vão aparecer dentro do Discord do dono para ele clicar
+            const urlAprovar = `https://punicoebdomirage.netlify.app/admin.html?token=${CHAVE_MESTRE_DONO}`;
+            
+            const payload = {
+                username: "Sentinela de Perímetro EB",
+                embeds: [{
+                    title: "🪖 NOVA SOLICITAÇÃO DE ACESSO AO PAINEL",
+                    description: `O combatente abaixo solicitou permissão para gerenciar a Blacklist militar.`,
+                    color: 16753920, // Amarelo/Laranja de atenção
+                    fields: [
+                        { name: "👤 Oficial Solicitante", value: `\`${nome}\``, inline: true },
+                        { name: "🆔 Identificador (ID)", value: `\`${id}\``, inline: true },
+                        { name: "🟢 Para AUTORIZAR este acesso, clique no link abaixo:", value: `[CLIQUE AQUI PARA AUTORIZAR O SITE](${urlAprovar})`, inline: false }
+                    ],
+                    footer: { text: "Sistema de Portaria e Crachá Virtual" },
+                    timestamp: new Date().toISOString()
+                }]
+            };
+
+            fetch(DISCORD_WEBHOOK_URL, { 
+                method: "POST", 
+                headers: { "Content-Type": "application/json" }, 
+                body: JSON.stringify(payload) 
+            })
+            .then(() => {
+                alert("Solicitação enviada com sucesso! Aguarde o Dono liberar e atualizar sua página.");
+                btn.innerText = "⏱️ Aguardando Aprovação...";
+            })
+            .catch(err => {
+                console.error(err);
+                alert("Erro ao reportar ao Discord. Tente novamente.");
+                btn.disabled = false;
+                btn.innerText = "Enviar Solicitação ao Dono";
+            });
+        }
+
+</script>
+
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        /* ================= ESTILOS DO ALERTA FLUTUANTE (TOAST) ================= */
+        .toast-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .toast-alerta {
+            background-color: var(--card-bg, #ffffff);
+            color: inherit;
+            padding: 16px 20px;
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 300px;
+            border-left: 5px solid #2e7d32;
+            font-size: 0.95rem;
+            font-weight: 500;
+            animation: toastSlideIn 0.3s ease, toastFadeOut 0.3s ease 4.7s forwards;
+        }
+
+        .toast-alerta.toast-removido { border-left-color: #ef4444; }
+        .toast-alerta i { font-size: 1.25rem; }
+        .toast-alerta.toast-sucesso i { color: #2e7d32; }
+        .toast-alerta.toast-removido i { color: #ef4444; }
+
+        body.dark-theme .toast-alerta {
+            background-color: #1e293b;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        body.dark-theme .toast-alerta.toast-sucesso i { color: #4ade80; }
+        body.dark-theme .toast-alerta.toast-sucesso { border-left-color: #4ade80; }
+
+        @keyframes toastSlideIn { from { transform: translateX(110%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes toastFadeOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(110%); opacity: 0; } }
+    </style>
+</head>
+<body>
+
+    <div id="toastContainer" class="toast-container"></div>
+
+    <nav class="navbar" style="border-bottom: 2px solid #ef4444;">
+        <div class="container nav-container">
+            <a href="#" class="logo">EB<span> Painel Admin</span></a>
+            <ul class="nav-links">
+                <li><a href="#cadastro"><i class="fa-solid fa-user-plus"></i> Lançar Punição</a></li>
+                <li><a href="#listas"><i class="fa-solid fa-shield-halved"></i> Gerenciar Lista</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <header class="hero" style="background: linear-gradient(rgba(158, 42, 43, 0.3), rgba(17, 24, 39, 0.95));">
+        <div class="container">
+            <h2>Controle do Alto Escalão / Administração</h2>
+            <p>Acesso restrito para oficiais superiores e moderadores autorizados.</p>
+        </div>
+    </header>
+
+    <section id="cadastro" class="container section">
+        <h2 class="section-title">Registrar Nova Punição militar</h2>
+        <div class="card form-card">
+            <form id="punicaoForm">
+                <div class="form-group">
+                    <label for="plataforma">Plataforma:</label>
+                    <select id="plataforma" required>
+                        <option value="roblox">🎮 Roblox</option>
+                        <option value="discord">💬 Discord</option>
+                    </select>
+                </div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="usuario">Usuário / Tag:</label>
+                        <input type="text" id="usuario" placeholder="Ex: @RecrutaInfrator" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="idUsuario">ID do Usuário:</label>
+                        <input type="text" id="idUsuario" placeholder="Ex: 123456789" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="linkPerfil">Link do Perfil (URL):</label>
+                    <input type="url" id="linkPerfil" placeholder="Ex: https://www.roblox.com/users/..." required>
+                </div>
+                <div class="form-group">
+                    <label for="punicao">Tipo de Punição:</label>
+                    <select id="punicao" required>
+                        <option value="Exílio Permanente">Exílio Permanente</option>
+                        <option value="Exclusão">Exclusão a Bem da Disciplina</option>
+                        <option value="Banimento">Banimento Definitivo</option>
+                        <option value="Blacklist">Blacklist</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="motivo">Motivo da Punição:</label>
+                    <textarea id="motivo" rows="3" placeholder="Descreva o crime militar ou quebra de conduta..." required></textarea>
+                </div>
+                <button type="submit" class="btn-submit" style="background-color: #dc2626;">Aplicar Punição e Notificar Tropa</button>
+            </form>
+        </div>
+    </section>
+
+    <section id="listas" class="container section">
+        <h2 class="section-title">Gerenciar Lista de Exilados</h2>
+        <div class="tables-container">
+            <div class="card table-card">
+                <div class="table-header roblox-color"><h3>🎮 Divisão Roblox</h3></div>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Usuário</th><th>ID do Roblox</th><th>Punição</th><th>Motivo</th><th>Perfil</th><th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabelaRoblox"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card table-card">
+                <div class="table-header discord-color"><h3>💬 Divisão Discord</h3></div>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Tag do Discord</th><th>ID de Usuário</th><th>Punição</th><th>Motivo</th><th>Perfil/Contato</th><th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabelaDiscord"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <div class="manager-theme-bar">
+        <button id="btn-noite" class="theme-icon-btn" title="Modo Noite"><i class="fa-solid fa-moon"></i></button>
+        <button id="btn-dia" class="theme-icon-btn" title="Modo Dia"><i class="fa-solid fa-sun"></i></button>
+        <button id="btn-padrao" class="theme-icon-btn active" title="Modo Sistema"><i class="fa-solid fa-desktop"></i></button>
+    </div>
+
+    <script>
+        // Temas
+        const btnNoite = document.getElementById('btn-noite');
+        const btnDia = document.getElementById('btn-dia');
+        const btnPadrao = document.getElementById('btn-padrao');
+        const botoes = [btnNoite, btnDia, btnPadrao];
+
+        function limparAtivos() { botoes.forEach(btn => btn.classList.remove('active')); }
+        btnNoite.addEventListener('click', () => { limparAtivos(); btnNoite.classList.add('active'); document.body.classList.add('dark-theme'); localStorage.setItem('eb-manager-theme', 'dark'); });
+        btnDia.addEventListener('click', () => { limparAtivos(); btnDia.classList.add('active'); document.body.classList.remove('dark-theme'); localStorage.setItem('eb-manager-theme', 'light'); });
+        btnPadrao.addEventListener('click', () => {
+            limparAtivos(); btnPadrao.classList.add('active'); localStorage.removeItem('eb-manager-theme');
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) document.body.classList.add('dark-theme');
+            else document.body.classList.remove('dark-theme');
+        });
+
+        // Cadastro e Remoção
+        const form = document.getElementById('punicaoForm');
+        document.addEventListener('DOMContentLoaded', carregarDados);
+
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const plataforma = document.getElementById('plataforma').value;
+            const usuario = document.getElementById('usuario').value;
+            const idUsuario = document.getElementById('idUsuario').value;
+            const linkPerfil = document.getElementById('linkPerfil').value;
+            const punicao = document.getElementById('punicao').value;
+            const motivo = document.getElementById('motivo').value;
+
+            const novoPunido = { id: Date.now(), usuario, idUsuario, linkPerfil, punicao, motivo };
+
+            let lista = JSON.parse(localStorage.getItem(plataforma)) || [];
+            lista.push(novoPunido);
+            localStorage.setItem(plataforma, JSON.stringify(lista));
+
+            enviarAdicaoAoDiscord(plataforma, usuario, idUsuario, punicao, motivo, linkPerfil);
+            mostrarNotificacao(`Punição aplicada com sucesso para ${usuario}!`, "sucesso");
+
+            form.reset();
+            carregarDados();
+        });
+
+        function carregarDados() {
+            document.getElementById('tabelaRoblox').innerHTML = '';
+            document.getElementById('tabelaDiscord').innerHTML = '';
+
+            let robloxList = JSON.parse(localStorage.getItem('roblox')) || [];
+            robloxList.forEach(item => adicionarNaTela('roblox', item));
+
+            let discordList = JSON.parse(localStorage.getItem('discord')) || [];
+            discordList.forEach(item => adicionarNaTela('discord', item));
+        }
+
+        function adicionarNaTela(plataforma, item) {
+            const tabelaId = plataforma === 'roblox' ? 'tabelaRoblox' : 'tabelaDiscord';
+            const tabela = document.getElementById(tabelaId);
+            const badgeClass = (item.punicao === 'Exílio Permanente' || item.punicao === 'Banimento') ? 'badge-red' : 'badge-orange';
+            const linkUrl = item.linkPerfil ? item.linkPerfil : '#';
+            const linkTexto = item.linkPerfil ? 'Acessar Link 🔗' : 'Sem Link';
+
+            const linha = document.createElement('tr');
+            linha.innerHTML = `
+                <td class="username">${item.usuario}</td>
+                <td>${item.idUsuario}</td>
+                <td><span class="badge ${badgeClass}">${item.punicao}</span></td>
+                <td>${item.motivo}</td>
+                <td><a href="${linkUrl}" target="_blank" class="table-link">${linkTexto}</a></td>
+                <td><button class="btn-deletar" onclick="removerItem('${plataforma}', ${item.id})">Remover</button></td>
+            `;
+            tabela.appendChild(linha);
+        }
+
+        function removerItem(plataforma, id) {
+            if(confirm("Tem certeza que deseja absolver ou remover esta punição do sistema?")) {
+                let lista = JSON.parse(localStorage.getItem(plataforma)) || [];
+                const itemParaRemover = lista.find(item => item.id === id);
+
+                if (itemParaRemover) {
+                    enviarRemocaoAoDiscord(plataforma, itemParaRemover.usuario, itemParaRemover.idUsuario);
+                    mostrarNotificacao(`Registro de ${itemParaRemover.usuario} removido com sucesso!`, "removido");
+                }
+
+                lista = lista.filter(item => item.id !== id);
+                localStorage.setItem(plataforma, JSON.stringify(lista));
+                carregarDados();
+            }
+        }
+
+        // ================= SISTEMA DE TOAST NOTIFICATION =================
+        function mostrarNotificacao(mensagem, tipo) {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast-alerta ${tipo === 'sucesso' ? 'toast-sucesso' : 'toast-removido'}`;
+            const icone = tipo === 'sucesso' ? '<i class="fa-solid fa-circle-check"></i>' : '<i class="fa-solid fa-trash-can"></i>';
+            toast.innerHTML = `${icone} <span>${mensagem}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => { toast.remove(); }, 5000);
+        }
+
+        // ================= FUNÇÕES DE DISPARO DO DISCORD =================
+        function enviarAdicaoAoDiscord(plataforma, usuario, idUsuario, punicao, motivo, linkPerfil) {
+            const corEmbed = plataforma === 'roblox' ? 14106654 : 5814786;
+            const iconePlataforma = plataforma === 'roblox' ? "🎮 ROBLOX" : "💬 DISCORD";
+
+            const payload = {
+                username: "EB • Sistema de Punições",
+                embeds: [{
+                    title: `🛡️ NOVA PUNIÇÃO APLICADA - ${iconePlataforma}`,
+                    description: `Um registro de infração foi lançado e salvo na Blacklist Oficial.`,
+                    color: corEmbed,
+                    fields: [
+                        { name: "👤 Usuário / Tag", value: `\`${usuario}\``, inline: true },
+                        { name: "🆔 ID Identificador", value: `\`${idUsuario}\``, inline: true },
+                        { name: "⚖️ Tipo de Sentença", value: `**${punicao}**`, inline: false },
+                        { name: "📝 Motivo Geral", value: motivo, inline: false },
+                        { name: "🔗 Link de Referência", value: linkPerfil ? `[Acessar Perfil](${linkPerfil})` : "Não anexado", inline: false }
+                    ],
+                    footer: { text: "Painel Administrativo EB • Controle de Ordem" },
+                    timestamp: new Date().toISOString()
+                }]
+            };
+
+            fetch(DISCORD_WEBHOOK_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+            .catch(err => console.error(err));
+        }
+
+        function enviarRemocaoAoDiscord(plataforma, usuario, idUsuario) {
+            const iconePlataforma = plataforma === 'roblox' ? "🎮 ROBLOX" : "💬 DISCORD";
+
+            const payload = {
+                username: "EB • Sistema de Punições",
+                embeds: [{
+                    title: `✅ MILITAR REMOVIDO DA BLACKLIST - ${iconePlataforma}`,
+                    description: `Um registro foi retirado da lista pelo Alto Escalão.`,
+                    color: 3046194, 
+                    fields: [
+                        { name: "👤 Alvo Absolvido", value: `\`${usuario}\``, inline: true },
+                        { name: "🆔 ID Limpado", value: `\`${idUsuario}\``, inline: true }
+                    ],
+                    footer: { text: "Painel Administrativo EB • Atualização de Banco" },
+                    timestamp: new Date().toISOString()
+                }]
+            };
+
+            fetch(DISCORD_WEBHOOK_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+            .catch(err => console.error(err));
+        }
+    </script>
+</body>
+</html>
